@@ -104,6 +104,8 @@ calls_with_hood <- calls_with_hood |>
       Status = if_else(is.na(CLOSEDDATETIME), "OPEN", "CLOSED")
     ) |>
   mutate(across(where(is.character), toupper))
+
+write_csv(calls_with_hood, "allwithstatus.csv")
 ```
 
 ```{r}
@@ -147,6 +149,8 @@ ndispatchonly |>
     title = "Filtered 411 Calls by Neighborhood",
     color = "Neighborhood"
   )
+
+write_csv(ndispatchonly, "ndispatchonly.csv")
 ```
 
 ```{r}
