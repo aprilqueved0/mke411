@@ -38,8 +38,9 @@ MKE411_0803 |>
 ```{r}
 MKE411_0803 <- MKE411_0803 |>
   rename(
-    CATEGORY = TITLE,
-    DESCRIPTION = CASECLOSUREREASONDESCRIPTION
+    #CATEGORY = TITLE,
+    #DESCRIPTION = CASECLOSUREREASONDESCRIPTION,
+    ADDRESS = OBJECTDESC
   ) |> # Changing header names to more accurate descriptions
   mutate(
     DAYS_TO_CLOSE = as.numeric(difftime(CLOSEDDATETIME, CREATIONDATE, units = "days"))
@@ -99,13 +100,25 @@ calls_with_hood <- calls_with_hood |>
       DAYS_TO_CLOSE = case_when(
         is.na(CLOSEDDATETIME) ~ as.numeric(difftime(Sys.Date(), CREATIONDATE, units = "days")),
         TRUE ~ as.numeric(difftime(CLOSEDDATETIME, CREATIONDATE, units = "days"))
-      )
-    )
+      ),
+      Status = if_else(is.na(CLOSEDDATETIME), "OPEN", "CLOSED")
+    ) |>
+  mutate(across(where(is.character), toupper))
 ```
 
 ```{r}
 # Searching for neighborhoods with most tickets created overall
 calls_with_hood |>
+  group_by(NEIGHBORHD) |>
+  summarise(
+    count_id = n()
+  ) |>
+  arrange(desc(count_id))
+```
+
+```{r}
+calls_with_hood |>
+  filter(Status == "OPEN") |>
   group_by(NEIGHBORHD) |>
   summarise(
     count_id = n()
