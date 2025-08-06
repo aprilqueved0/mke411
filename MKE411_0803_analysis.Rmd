@@ -1,0 +1,177 @@
+---
+title: "MKE411-0802"
+author: "April Quevedo"
+date: "2025-08-04"
+output: html_document
+---
+
+```{r}
+# Load relevant libraries
+library(tidygeocoder)
+library(tidyverse)
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(stringr)
+```
+
+```{r}
+# Pulling data obtained from MKE's open data portal. The dataset is updated daily and can be accessed here: https://data.milwaukee.gov/dataset/callcenterdatacurrent/resource/bf2b508a-5bfa-49da-8846-d87ffeee020a
+MKE411_0803 <- read_csv("MKE411_0803.csv")
+glimpse(MKE411_0803) # Review contents of dataset
+
+# Addresses are provided but not lat-long. Will need to covert for mapping.
+```
+
+```{r}
+# Grouping data by call request type and coutning # of instances. List in decending order.
+
+MKE411_0803 |>
+  group_by(TITLE) |>
+  summarise(
+    count_id = n()
+  ) |>
+  arrange(desc(count_id))
+```
+
+```{r}
+MKE411_0803 <- MKE411_0803 |>
+  rename(
+    CATEGORY = TITLE,
+    DESCRIPTION = CASECLOSUREREASONDESCRIPTION
+  ) |> # Changing header names to more accurate descriptions
+  mutate(
+    DAYS_TO_CLOSE = as.numeric(difftime(CLOSEDDATETIME, CREATIONDATE, units = "days"))
+  ) # Calculating the number of days elapsed from request open to request close
+```
+
+```{r}
+MKE411_GEO <- MKE411_0803 |>
+    mutate(
+    CLEANED_ADDRESS = if_else(
+      str_detect(ADDRESS, "MILWAUKEE"),
+      ADDRESS,
+      paste0(ADDRESS, ", MILWAUKEE, WI")
+    )
+  ) %>% # Adding city/state for improved geocoding (some addresses do not contain full address)
+  geocode(address = CLEANED_ADDRESS, method = "arcgis", lat = geocoded_lat, long = geocoded_lon) %>% # Geocoding with arcgis
+  mutate(
+    DAYS_TO_CLOSE = as.numeric(difftime(CLOSEDDATETIME, CREATIONDATE, units = "days"))
+  ) # Calculating time since ticket opened 
+```
+
+```{r}
+MKE411_TL <- MKE411_GEO |>
+  mutate(
+    DAYS_TO_CLOSE = case_when(
+      is.na(CLOSEDDATETIME) ~ as.numeric(difftime(Sys.Date(), CREATIONDATE, units = "days")),
+      TRUE ~ as.numeric(difftime(CLOSEDDATETIME, CREATIONDATE, units = "days"))
+    )
+  ) # Improved calculation using system date to calculate time elapsed since ticket creation for all open tickets
+```
+
+```{r}
+# Load shapefile
+neighborhoods <- st_read("neighborhood/neighborhood.shp")
+
+# View column names
+names(neighborhoods)
+```
+
+```{r}
+# Reviewing CRS in both dataframes
+# st_crs(calls_sf)
+# st_crs(neighborhoods)
+
+# First, transform to WGS84 (EPSG:4326)
+neighborhoods_aligned <- st_transform(neighborhoods, crs = st_crs(calls_sf))
+
+# Then fix any invalid geometries
+neighborhoods_valid <- st_make_valid(neighborhoods_aligned)
+
+# Now try the spatial join again
+calls_with_hood <- st_join(calls_sf, neighborhoods_valid, join = st_within)
+
+# Recalculating time elapsed since ticket creation for all open tickets using system date
+calls_with_hood <- calls_with_hood |>
+  mutate(
+      DAYS_TO_CLOSE = case_when(
+        is.na(CLOSEDDATETIME) ~ as.numeric(difftime(Sys.Date(), CREATIONDATE, units = "days")),
+        TRUE ~ as.numeric(difftime(CLOSEDDATETIME, CREATIONDATE, units = "days"))
+      )
+    )
+```
+
+```{r}
+# Define target neighborhoods
+target_hoods <- c("HARAMBEE", "METCALFE PARK", "BURNHAM PARK", "SILVER CITY", "LAYTON PARK")
+
+# Filter for Neighborhood Dispatch areas only
+ndispatchonly <- calls_with_hood |>
+  filter(NEIGHBORHD %in% target_hoods)
+```
+
+```{r}
+# Mapping 411 calls in our neighborhoods
+ndispatchonly |>
+  ggplot() +
+  geom_sf(data = neighborhoods_valid, fill = "gray95", color = "white") +
+  geom_sf(data = ndispatchonly, aes(color = NEIGHBORHD), size = 1, alpha = 0.7) +
+  theme_minimal() +
+  labs(
+    title = "Filtered 411 Calls by Neighborhood",
+    color = "Neighborhood"
+  )
+```
+
+```{r}
+glimpse(ndispatchonly)
+```
+
+```{r}
+# Summary per neighborhood
+
+neighborhood_summary <- ndispatchonly |>
+  group_by(NEIGHBORHD) |>
+  summarise(
+    number_of_calls = n(),
+    categories = paste0(
+      paste0(
+        names(sort(table(CATEGORY), decreasing = TRUE)),
+        ": ",
+        sort(table(CATEGORY), decreasing = TRUE)
+      ), collapse = "; "
+    ),
+    avg_days_to_close = round(mean(DAYS_TO_CLOSE, na.rm = TRUE), 1),
+    oldest_ticket = format(min(CREATIONDATE, na.rm = TRUE), "%Y-%m-%d")
+  ) |>
+  arrange(desc(number_of_calls))
+
+print(neighborhood_summary)
+
+```
+
+```{r}
+# Viewing potholes in Neighborhood Dispatch coverage areas
+potholesndispatch <- ndispatchonly |>
+  filter(str_detect(CATEGORY, regex("pothole", ignore_case = TRUE))) |>
+  # summarise(avg_days_to_close = mean(DAYS_TO_CLOSE, na.rm = TRUE))
+  
+# Average days to close in our neighborhoods is 100 (99.35) days.
+
+# View the result
+print(potholesndispatch)
+```
+
+```{r}
+# Viewing all potholes citywide
+allcitypotholes <- calls_with_hood |>
+  filter(str_detect(CATEGORY, regex("pothole", ignore_case = TRUE))) |>
+  # summarise(avg_days_to_close = mean(DAYS_TO_CLOSE, na.rm = TRUE))
+
+# Average days to close citywide is 82 (81.9) days.
+
+print(allcitypotholes)
+```
+
