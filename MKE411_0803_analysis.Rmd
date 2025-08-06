@@ -104,6 +104,17 @@ calls_with_hood <- calls_with_hood |>
 ```
 
 ```{r}
+# Searching for neighborhoods with most tickets created overall
+calls_with_hood |>
+  group_by(NEIGHBORHD) |>
+  summarise(
+    count_id = n()
+  ) |>
+  arrange(desc(count_id))
+```
+
+
+```{r}
 # Define target neighborhoods
 target_hoods <- c("HARAMBEE", "METCALFE PARK", "BURNHAM PARK", "SILVER CITY", "LAYTON PARK")
 
