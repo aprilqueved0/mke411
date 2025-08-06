@@ -1,0 +1,43 @@
+---
+title: "MKE411-0802"
+author: "April Quevedo"
+date: "2025-08-04"
+output: html_document
+---
+
+```{r}
+# This is a comment inside of a codeblock. Comments doesn't run when we run the codeblock.
+# Adding this command is a good way to start your class reference notebook.
+library(tidygeocoder)
+library(tidyverse)
+```
+```{r}
+# Pulling data obtained from MKE's open data portal. The dataset is updated daily and can be accessed here: https://data.milwaukee.gov/dataset/callcenterdatacurrent/resource/bf2b508a-5bfa-49da-8846-d87ffeee020a
+MKE411_0803 <- read_csv("MKE411_0803.csv")
+glimpse(MKE411_0803)
+# Addresses are provided but not lat-long. Will need to covert for mapping.
+```
+```{r}
+MKE411_0803 |>
+  group_by(TITLE) |>
+  summarise(
+    count_id = n()
+  ) |>
+  arrange(desc(count_id))
+```
+```{r}
+MKE411_0803 <- MKE411_0803 |>
+  rename(
+    CATEGORY = TITLE,
+    DESCRIPTION = CASECLOSUREREASONDESCRIPTION
+  ) |> # Changing header names to more accurate descriptions
+  mutate(
+    DAYS_TO_CLOSE = as.numeric(difftime(CLOSEDDATETIME, CREATIONDATE, units = "days"))
+  ) # Calculating the number of days elapsed from request open to request close
+```
+
+```{r}
+MKE411_GEO <- MKE411_0803 |>
+    geocode(address = ADDRESS, method = "arcgis", lat = geocoded_lat, long = geocoded_lon) # Geocoding addresses for mapping later
+```
+
